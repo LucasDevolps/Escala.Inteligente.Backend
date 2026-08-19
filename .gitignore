@@ -1,0 +1,54 @@
+# Build and publish outputs
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+[Pp]ublish/
+
+# Visual Studio, VS Code and JetBrains Rider
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Test results and code coverage
+[Tt]est[Rr]esult*/
+[Cc]overage/
+coverage.*
+*.coverage
+*.coveragexml
+*.trx
+
+# NuGet packages and generated package files
+*.nupkg
+*.snupkg
+packages/
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.*.Local.json
+secrets.json
+
+# Logs, diagnostics and temporary files
+[Ll]ogs/
+*.log
+*.dmp
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
