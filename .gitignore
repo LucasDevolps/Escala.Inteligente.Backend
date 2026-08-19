@@ -37,6 +37,7 @@ packages/
 appsettings.Local.json
 appsettings.*.Local.json
 secrets.json
+logins.local.txt
 
 # Logs, diagnostics and temporary files
 [Ll]ogs/
