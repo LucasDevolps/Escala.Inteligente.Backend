@@ -28,6 +28,14 @@ public sealed class BootstrapOptions
     public string ManagerPassword { get; init; } = "";
 }
 
+public sealed class ReferenceScheduleSeedOptions
+{
+    public const string SectionName = "ReferenceScheduleSeed";
+    public bool Enabled { get; init; }
+    public int Year { get; init; } = 2026;
+    public int Month { get; init; } = 7;
+}
+
 public sealed class RetentionOptions
 {
     public const string SectionName = "Retention";
@@ -42,6 +50,7 @@ public sealed partial class DatabaseInitializer(
     IClock clock,
     IOptions<DatabaseOptions> databaseOptions,
     IOptions<BootstrapOptions> bootstrapOptions,
+    IOptions<ReferenceScheduleSeedOptions> referenceScheduleSeedOptions,
     ILogger<DatabaseInitializer> logger)
 {
     [GeneratedRegex("[^0-9+]", RegexOptions.CultureInvariant)]
@@ -55,8 +64,16 @@ public sealed partial class DatabaseInitializer(
             logger.LogInformation("Database migrations applied successfully");
         }
 
-        var options = bootstrapOptions.Value;
-        if (!options.Enabled) return;
+        if (bootstrapOptions.Value.Enabled)
+        {
+            await BootstrapAsync(bootstrapOptions.Value, cancellationToken);
+        }
+
+        await SeedReferenceScheduleAsync(cancellationToken);
+    }
+
+    private async Task BootstrapAsync(BootstrapOptions options, CancellationToken cancellationToken)
+    {
         Validate(options);
         var normalizedEmail = options.ManagerEmail.Trim().ToUpperInvariant();
         if (await db.UserSet.IgnoreQueryFilters().AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken))
@@ -87,6 +104,85 @@ public sealed partial class DatabaseInitializer(
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         logger.LogInformation("Bootstrap completed for organization {OrganizationId} and manager {ManagerId}", organization.Id, manager.Id);
+    }
+
+    private async Task SeedReferenceScheduleAsync(CancellationToken cancellationToken)
+    {
+        var options = referenceScheduleSeedOptions.Value;
+        if (!options.Enabled) return;
+        if (options.Year is < 2000 or > 2200 || options.Month is < 1 or > 12)
+            throw new InvalidOperationException("ReferenceScheduleSeed possui ano ou mês inválido.");
+
+        var employees = await (
+            from employee in db.EmployeeSet.IgnoreQueryFilters()
+            join user in db.UserSet.IgnoreQueryFilters() on employee.UserId equals user.Id
+            where employee.IsActive && (user.Name == "Miriam" || user.Name == "Eli")
+            select new { Employee = employee, UserName = user.Name })
+            .ToListAsync(cancellationToken);
+
+        var pairs = employees
+            .GroupBy(x => x.Employee.OrganizationId)
+            .Select(group => new
+            {
+                OrganizationId = group.Key,
+                Miriams = group.Where(x => x.UserName == "Miriam").Select(x => x.Employee).DistinctBy(x => x.Id).ToArray(),
+                Elis = group.Where(x => x.UserName == "Eli").Select(x => x.Employee).DistinctBy(x => x.Id).ToArray()
+            })
+            .Where(x => x.Miriams.Length == 1 && x.Elis.Length == 1)
+            .ToList();
+
+        foreach (var pair in pairs)
+        {
+            if (await db.ScheduleSet.IgnoreQueryFilters().AnyAsync(
+                    x => x.OrganizationId == pair.OrganizationId && x.Year == options.Year && x.Month == options.Month,
+                    cancellationToken))
+            {
+                logger.LogInformation(
+                    "Reference schedule {Year}/{Month} already exists for organization {OrganizationId}; seed skipped",
+                    options.Year,
+                    options.Month,
+                    pair.OrganizationId);
+                continue;
+            }
+
+            var manager = await db.UserSet.IgnoreQueryFilters()
+                .Where(x => x.OrganizationId == pair.OrganizationId && x.Role == UserRole.Manager && x.IsActive)
+                .OrderBy(x => x.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (manager is null)
+            {
+                logger.LogWarning(
+                    "Reference schedule seed skipped because organization {OrganizationId} has no active manager",
+                    pair.OrganizationId);
+                continue;
+            }
+
+            var now = clock.UtcNow;
+            var schedule = new Schedule(pair.OrganizationId, options.Year, options.Month, manager.Id, now);
+            db.Add(schedule);
+            var start = new DateOnly(options.Year, options.Month, 1);
+            var end = start.AddMonths(1);
+            for (var date = start; date < end; date = date.AddDays(1))
+            {
+                if (date.DayOfWeek != DayOfWeek.Sunday)
+                    db.Add(new ScheduleAssignment(schedule.Id, pair.Miriams[0].Id, date, AssignmentSource.Manual, manager.Id, now,
+                        "[\"Escala de referência baseada no padrão operacional de agosto de 2026.\"]"));
+                if (date.DayOfWeek != DayOfWeek.Saturday)
+                    db.Add(new ScheduleAssignment(schedule.Id, pair.Elis[0].Id, date, AssignmentSource.Manual, manager.Id, now,
+                        "[\"Escala de referência baseada no padrão operacional de agosto de 2026.\"]"));
+            }
+
+            schedule.MarkEdited();
+            schedule.Publish(manager.Id, now);
+            db.Add(new AuditLog(pair.OrganizationId, manager.Id, "ReferenceScheduleSeeded", "Schedule", schedule.Id,
+                "{\"fields\":[\"year\",\"month\",\"assignments\",\"status\"]}", "reference-schedule-seed", null, now));
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation(
+                "Reference schedule {Year}/{Month} seeded for Miriam and Eli in organization {OrganizationId}",
+                options.Year,
+                options.Month,
+                pair.OrganizationId);
+        }
     }
 
     private static void Validate(BootstrapOptions options)
