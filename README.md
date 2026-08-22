@@ -87,6 +87,11 @@ dotnet run --project src/ScheduleManager.Worker
 
 Após o primeiro seed, `Bootstrap__Enabled` pode ser desativado. O código de ativação de cada colaborador é retornado uma única vez por `POST /api/v1/employees`.
 
+Em `Development`, a carga de referência de julho de 2026 procura Miriam e Eli já cadastrados na
+mesma organização e cria somente a escala e suas atribuições. A carga é idempotente, não cria
+funcionários e pode ser desativada com `ReferenceScheduleSeed__Enabled=false`. Para executá-la
+manualmente em uma base local, use `scripts/seed-july-2026-reference-schedule.sql`.
+
 ## Autenticação e navegador
 
 - Access token JWT: cinco minutos, somente em memória no frontend;

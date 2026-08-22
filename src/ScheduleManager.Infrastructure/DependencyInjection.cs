@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddOptions<RabbitMqOptions>().Bind(configuration.GetSection(RabbitMqOptions.SectionName));
         services.AddOptions<DatabaseOptions>().Bind(configuration.GetSection(DatabaseOptions.SectionName));
         services.AddOptions<BootstrapOptions>().Bind(configuration.GetSection(BootstrapOptions.SectionName));
+        services.AddOptions<ReferenceScheduleSeedOptions>().Bind(configuration.GetSection(ReferenceScheduleSeedOptions.SectionName));
         services.AddOptions<RetentionOptions>()
             .Bind(configuration.GetSection(RetentionOptions.SectionName))
             .Validate(x => x.NotificationsDays > 0 && x.ApplicationErrorsDays > 0 && x.RevokedSessionsDays > 0,
